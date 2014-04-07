@@ -105,8 +105,8 @@ angular.module('ngTextcomplete', [])
 /**
  * Textarea manager class.
  */
-.factory('Completer', ['ListView', 'utils', '$rootScope',
-    function(ListView, utils, $rootScope) {
+.factory('Completer', ['ListView', 'utils', '$rootScope', '$timeout',
+    function(ListView, utils, $rootScope, $timeout) {
     var html, css, $baseWrapper, $baseList;
     html = {
         wrapper: '<div class="textcomplete-wrapper"></div>',
@@ -135,14 +135,17 @@ angular.module('ngTextcomplete', [])
         this.el = $el.get(0);  // textarea element
         focus = this.el === document.activeElement;
         // Cannot wrap $el at initialize method lazily due to Firefox's behavior.
-        this.$el = wrapElement($el); // Focus is lost
+        var self = this;
+        $timeout(function() {
+          self.$el = wrapElement($el); // Focus is lost
+          if (focus) {
+              self.initialize();
+              self.$el.focus();
+          } else {
+              self.$el.one('focus.textComplete', $.proxy(self.initialize, self));
+          }
+        });
         this.strategies = strategies;
-        if (focus) {
-            this.initialize();
-            this.$el.focus();
-        } else {
-            this.$el.one('focus.textComplete', $.proxy(this.initialize, this));
-        }
     };
 
     /**
