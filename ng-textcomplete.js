@@ -244,6 +244,13 @@ angular.module('ngTextcomplete', [])
             }
 
             pre = pre.replace(this.strategy.match, newSubStr);
+
+            // RTL support, LEFT-TO-RIGHT EMBEDDING ("LRE", hexadecimal 202A)
+            // http://www.fileformat.info/info/unicode/char/202a/index.htm
+            if(this.dir == 'rtl') {
+                pre = '&#8234;' + pre;
+                post += '&#8234;';
+            }
             if (this.el.contentEditable === 'true') {
               this.el.innerHTML = pre + post;
               this.placeCaretAtEnd();
@@ -271,9 +278,9 @@ angular.module('ngTextcomplete', [])
             // Consequently, the span element's position is the thing what we want.
 
             if (this.el.selectionEnd === 0) return;
-            var properties, css, $div, $span, position, dir;
+            var properties, css, $div, $span, position;
 
-            dir = this.$el.attr('dir') || this.$el.css('direction');
+            this.dir = this.$el.attr('dir') || this.$el.css('direction');
             properties = ['border-width', 'font-family', 'font-size', 'font-style',
               'font-variant', 'font-weight', 'height', 'letter-spacing',
               'word-spacing', 'line-height', 'text-decoration', 'text-align',
@@ -287,7 +294,7 @@ angular.module('ngTextcomplete', [])
               'white-space': 'pre-wrap',
               top: 0,
               left: -9999,
-              direction: dir
+              direction: this.dir
             }, utils.getStyles(this.$el, properties));
 
             $div = $('<div></div>').css(css).text(this.getTextFromHeadToCaret());
@@ -296,7 +303,7 @@ angular.module('ngTextcomplete', [])
             position = $span.position();
             position.top += $span.height() - this.$el.scrollTop();
 
-            if (dir == 'rtl') {
+            if (this.dir == 'rtl') {
                 position.left -= this.listView.$el.width();
             }
 
