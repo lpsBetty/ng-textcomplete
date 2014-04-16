@@ -109,8 +109,8 @@ angular.module('ngTextcomplete', [])
 /**
  * Textarea manager class.
  */
-.factory('Completer', ['ListView', 'utils',
-  function(ListView, utils) {
+.factory('Completer', ['ListView', 'utils', '$timeout',
+  function(ListView, utils, $timeout) {
     var html, css, $baseWrapper, $baseList, _id;
     html = {
       wrapper: '<div class="textcomplete-wrapper"></div>',
@@ -134,20 +134,32 @@ angular.module('ngTextcomplete', [])
     /**
      * Completer manager class.
      */
-    function Completer($el, strategies) {
-      var focus;
+    function Completer($el) {
+      var focus, offset;
       this.el = $el.get(0); // textarea element
       focus = this.el === document.activeElement;
-      // Cannot wrap $el at initialize method lazily due to Firefox's behavior.
-      this.$el = wrapElement($el); // Focus is lost
+
+      if(this.el.contentEditable === 'true') {
+        offset = this.getCaretCharacterOffset();
+      }
+
       this.id = 'textComplete' + _id++;
       this.strategies = [];
-      if (focus) {
-        this.initialize();
-        this.$el.focus();
-      } else {
-        this.$el.one('focus.textComplete', $.proxy(this.initialize, this));
-      }
+
+      // Cannot wrap $el at initialize method lazily due to Firefox's behavior.
+      var self = this;
+      $timeout(function() {
+        self.$el = wrapElement($el); // Focus is lost
+        if (focus) {
+          self.initialize();
+          self.$el.focus();
+          if(self.el.contentEditable === 'true') {
+            self.setCaretForContenteditable(offset);
+          }
+        } else {
+          self.$el.one('focus.textComplete', $.proxy(self.initialize, self));
+        }
+      });
     };
 
     /**
@@ -258,7 +270,17 @@ angular.module('ngTextcomplete', [])
       onSelect: function(value) {
         var pre, post, newSubStr;
         pre = this.getTextFromHeadToCaret();
-        post = this.el.value.substring(this.el.selectionEnd);
+
+        if (this.el.contentEditable === 'true') {
+          var range = window.getSelection().getRangeAt(0);
+          var preSelectionRange = range.cloneRange();
+          preSelectionRange.selectNodeContents(this.el);
+          preSelectionRange.setEnd(range.startContainer, range.startOffset);
+          var selectionEnd = preSelectionRange.toString().length + range.toString().length;
+          post = this.el.innerText.substring(selectionEnd);
+        } else {
+          post = this.el.value.substring(this.el.selectionEnd);
+        }
 
         newSubStr = this.strategy.replace(value);
         if (angular.isArray(newSubStr)) {
@@ -267,20 +289,24 @@ angular.module('ngTextcomplete', [])
         }
 
         pre = pre.replace(this.strategy.match, newSubStr);
-        // if (this.el.contentEditable === 'true') {
-        //   this.el.innerHTML = pre + post;
-        //   this.placeCaretAtEnd();
-        // } else {
 
-        this.$el.val(pre + post);
-        $(this).trigger('change')
-          .trigger('textComplete:select', this.$el.val());
+        // RTL support, LEFT-TO-RIGHT EMBEDDING ("LRE", hexadecimal 202A)
+        // http://www.fileformat.info/info/unicode/char/202a/index.htm
+        if(this.dir == 'rtl') {
+          pre = '&#8234;' + pre;
+          post += '&#8234;';
+        }
 
-        this.el.focus();
-        this.el.selectionStart = this.el.selectionEnd = pre.length;
-        // }
+        if (this.el.contentEditable === 'true') {
+          this.el.innerText = pre + post;
+          this.setCaretForContenteditable(pre.length);
+        } else {
+          this.$el.val(pre + post);
+          this.el.focus();
+          this.el.selectionStart = this.el.selectionEnd = pre.length;
+        }
 
-        // this.$el.trigger('input').trigger('change').trigger('textComplete:select', value);
+        $(this).trigger('input').trigger('change').trigger('textComplete:select', value);
       },
 
       /**
@@ -363,16 +389,68 @@ angular.module('ngTextcomplete', [])
       getTextFromHeadToCaret: function() {
         var text, selectionEnd, range;
         selectionEnd = this.el.selectionEnd;
-        if (typeof selectionEnd === 'number') {
+        if (typeof selectionEnd === 'number' && this.el.contentEditable !== 'true') {
           text = this.el.value.substring(0, selectionEnd);
         } else if (document.selection) {
           range = this.el.createTextRange();
           range.moveStart('character', 0);
           range.moveEnd('textedit');
           text = range.text;
+        } else if (this.el.contentEditable === 'true') {
+          range = window.getSelection().getRangeAt(0);
+          var preSelectionRange = range.cloneRange();
+          preSelectionRange.selectNodeContents(this.el);
+          preSelectionRange.setEnd(range.startContainer, range.startOffset);
+          text = preSelectionRange.toString();
         }
         return text;
       },
+
+      /**
+       * Gets caret (cursor) position in contentEditable area
+       * @see  http://stackoverflow.com/questions/4811822/get-a-ranges-start-and-end-offsets-relative-to-its-parent-container/4812022#4812022
+       * @return {Number}
+       */
+      getCaretCharacterOffset: function() {
+        var caretOffset = 0;
+        if (typeof window.getSelection != "undefined") {
+          var range = window.getSelection().getRangeAt(0);
+          var preCaretRange = range.cloneRange();
+          preCaretRange.selectNodeContents(this.el);
+          preCaretRange.setEnd(range.endContainer, range.endOffset);
+          caretOffset = preCaretRange.toString().length;
+        } else if (typeof document.selection != "undefined" && document.selection.type != "Control") {
+          var textRange = document.selection.createRange();
+          var preCaretTextRange = document.body.createTextRange();
+          preCaretTextRange.moveToElementText(this.el);
+          preCaretTextRange.setEndPoint("EndToEnd", textRange);
+          caretOffset = preCaretTextRange.text.length;
+        }
+        return caretOffset;
+      },
+
+      /**
+       * Sets caret (cursor) position in contentEditable area
+       */
+      setCaretForContenteditable: function(offset) {
+        if(!this.el.innerText.length) { return; }
+
+        var sel = window.getSelection();
+        var childNode = this.el.childNodes[0];
+        var range = sel.getRangeAt(0);
+
+        range.collapse(true);
+
+        // sets caret to the end if offset is too big
+        if(offset > childNode.length) {
+          offset = childNode.length;
+        }
+        range.setStart(childNode, offset),
+
+        sel.removeAllRanges();
+        sel.addRange(range);
+      },
+
 
       /**
        * Parse the value of textarea and extract search query.
@@ -561,7 +639,7 @@ function(utils) {
     }
   });
 
-return ListView;
+  return ListView;
 }])
 
 /**
