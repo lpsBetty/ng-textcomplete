@@ -277,7 +277,7 @@ angular.module('ngTextcomplete', [])
           preSelectionRange.selectNodeContents(this.el);
           preSelectionRange.setEnd(range.startContainer, range.startOffset);
           var selectionEnd = preSelectionRange.toString().length + range.toString().length;
-          post = this.el.innerText.substring(selectionEnd);
+          post = this.$el.text().substring(selectionEnd);
         } else {
           post = this.el.value.substring(this.el.selectionEnd);
         }
@@ -298,7 +298,7 @@ angular.module('ngTextcomplete', [])
         }
 
         if (this.el.contentEditable === 'true') {
-          this.el.innerText = pre + post;
+          this.$el.text(pre + post);
           this.setCaretForContenteditable(pre.length);
         } else {
           this.$el.val(pre + post);
@@ -433,7 +433,7 @@ angular.module('ngTextcomplete', [])
        * Sets caret (cursor) position in contentEditable area
        */
       setCaretForContenteditable: function(offset) {
-        if(!this.el.innerText.length) { return; }
+        if(!this.$el.text().length) { return; }
 
         var sel = window.getSelection();
         var childNode = this.el.childNodes[0];
